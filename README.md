@@ -8,3 +8,17 @@ Nextflow offers several advantages, such as scalability, reproducibility, and th
 
 To get started, install Nextflow by following the instructions provided in the [Nextflow documentation](https://www.nextflow.io/docs/latest/install.html).  
 
+Steps: 
+```
+sudo apt install zip unzip
+
+curl -s https://get.sdkman.io | bash
+
+#Open new terminal 
+
+sdk install java 17.0.10-tem
+
+curl -s https://get.nextflow.io | bash
+
+chmod +x nextflow
+```
