@@ -31,25 +31,6 @@ Example:
 
 '''
 
-// params {
-//     sequence = null
-//     run = null
-//     predictions_per_model = null
-//     parameters = null
-//     batch_size = 25
-//     wall_time = 20
-//     tool_to_use = 'AFmassive'
-//     msas_precomputed = null
-//     top_n_models = null
-//     jobid = null
-//     calibration_from = null
-//     only_msas = false
-//     calibrate = false
-//     recompute_msas = false
-//     help = false
-// }
-
-
 // Workflow definition
 workflow {
     // Display the help message if requested
@@ -68,26 +49,42 @@ workflow {
     // Log inputs
     log.info("Sequence file: ${params.sequence}")
     log.info("Run name: ${params.run}")
-
+    log.info("Tool choosen: ${params.tool}")
     // Declare input
     seqFile = file(params.sequence)
     runName = params.run
 
     // Invoke the process
-    exampleProcess(seqFile, runName)
+    aligment(seqFile, runName, params.pair_strategy)
 }
 
-// Define a process globally
-process exampleProcess {
+
+process aligment {
+    container 'jysgro/colabfold:latest'
+
     input:
     path seqFile
     val runName
+    val pair_strategy
 
     output:
     file("${runName}_results.txt")
 
     script:
     """
-    echo "Running process for: ${seqFile}" > ${runName}_results.txt
+    if [[ ${pair_strategy} == "greedy" ]]; then
+        pairing_strategy=0
+    elif [[ ${pair_strategy} == "complete" ]]; then
+        pairing_strategy=1
+    else
+        echo "ValueError: --pair_strategy '${pair_strategy}'"
+        exit 1
+    fi
+
+    colabfold_search \
+    $seqFile \
+    data_dir \
+    output_msa \
+    --pairing_strategy \${pairing_strategy}
     """
 }
