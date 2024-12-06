@@ -1,17 +1,17 @@
-nextflow.enable.dsl=2
+nextflow.enable.dsl = 2
 
 // Define the help message
 def helpMessage = '''
 Usage:
-    nextflow run main.nf --sequence <path(s)> --run <name> --predictions_per_model <int> --parameters <path> [options]
-
+    nextflow main.nf --sequence example/H1140.fasta --run test --database_dir ~/data/public/colabfold/ -profile docker
 Required arguments:
     --sequence: path(s) of the sequence(s) to infer, should be a 'fasta' file or a list of files separated by commas.
     --run: name chosen for the run to organize outputs.
-    --predictions_per_model: number of predictions computed for each neural network model.
-    --parameters: json file's path containing the parameters used for this run.
+    --database_dir : ~/data/public/colabfold
 
 Optional arguments:
+    --parameters: json file's path containing the parameters used for this run.
+    --predictions_per_model: number of predictions computed for each neural network model.
     --batch_size <int>: (default: 25) number of predictions per batch, should not be higher than --predictions_per_model.
     --calibration_from <path>: path of a previous run to calibrate the batch size from (see --calibrate).
     --wall_time <int>: (default: 20) total time available for calibration computations, unit is hours.
@@ -27,12 +27,9 @@ Optional flags:
     --recompute_msas: purges previous alignment step and recomputes MSAs.
 
 Example:
-    nextflow main.nf --sequence example/H1140.fasta --run test --predictions_per_model 2 --parameters truc.json
-    nextflow main.nf --sequence example/H1140.fasta,example/H1141.fasta --run test --predictions_per_model 2 --parameters truc.json -profile docker
-
+    ./nextflow main.nf --sequence example/H1140.fasta --run test --database_dir ~/data/public/colabfold/ -profile docker -resume
 '''
 
-// Workflow definition
 workflow {
     // Display the help message if requested
     if (params.help || params.h) {
@@ -41,78 +38,63 @@ workflow {
     }
 
     // Validate required parameters
-    if (!params.sequence || !params.run || !params.predictions_per_model) {
-        log.error("Missing required parameters.")
+    if (!params.sequence || !params.run || !params.database_dir) {
+        log.error('Missing required parameters.')
         log.info(helpMessage)
         exit 1
     }
 
     def seqFiles = files(params.sequence)
-    def data_dir = params.data_dir 
-    // def num_recycle =     params.num_recycle
-    // def recycle_early_stop_tolerance = params.recycle_early_stop_tolerance
-    // def max_seq =    params.max_seq
-
-    // def disable_cluster_profile =    params.disable_cluster_profile
-    // def use_dropout =    params.use_dropout
 
     // Log inputs
     log.info("Sequence files: ${seqFiles}")
-    log.info("help: ${params.help}")
-    log.info("h: ${params.h}")
-    log.info("calibration: ${params.calibration}")
-    log.info("predictions_per_model: ${params.predictions_per_model}")
-    log.info("batch_size: ${params.batch_size}")
-    log.info("wall_time: ${params.wall_time}")
-    log.info("force_msas_computation: ${params.force_msas_computation}")
-    log.info("only_msas: ${params.only_msas}")
-    log.info("tool: ${params.tool}")
-    log.info("model_preset: ${params.model_preset}")
-    log.info("pair_strategy: ${params.pair_strategy}")
-    log.info("use_dropout: ${params.use_dropout}")
-    log.info("num_recycle: ${params.num_recycle}")
 
-    // Invoke the alignment process
-    def msa_results = RUN_alignment(seqFiles, params.run, params.data_dir, params.pair_strategy )
-
-    // Process batches and run inference
-    // def batched_sequences = msa_results
-    //     .groupTuple(size: params.batch_size ?: 25)
-    //     .map { batch, index -> tuple(index, batch) }
-
-    // batched_sequences | run_inference( params.run, params)
-    RUN_inference_no_batch( 
-        msa_results, 
-        params.run,
-        data_dir , 
-        params.num_recycle, 
-        params.recycle_early_stop_tolerance,
-        params.use_dropout)
+    def msa_results
+    if (params.msas_precomputed) {
+        // Use precomputed alignments
+        log.info("Using precomputed MSAs: ${params.msas_precomputed}")
+        log.info('Skipping alignment step as precomputed alignments are provided.')
+        msa_results = Channel
+            .fromPath(params.msas_precomputed)
+            .map { precomputed_msa -> tuple(precomputed_msa.baseName, precomputed_msa) }
+        
+    } else {
+        // Run alignment process
+        msa_results = RUN_alignment(seqFiles, params.run, params.database_dir, params.pair_strategy)
     }
 
-process RUN_FAKE_alignment {
-    container 'jysgro/colabfold:latest'
-    tag "$seqFile.baseName"
+    // Generate the batches channel (seqname, json_path)
+    batches_csv = Create_batchs_csv(msa_results, params.predictions_per_model, params.batch_size, "ColabFold", "", params.bash_script)
 
-    input:
-    path(seqFile)
-    val(runName)
-    path(data_dir)
-    val(pair_strategy)
+    //batches_csv.splitCsv( header: true ).view()
 
-    output:
-    tuple val(seqFile.baseName), path("${seqFile.baseName}_msa*")
+    RUN_inference(
+            batches_csv.splitCsv( header: true ),
+            msa_results,
+            params.run,
+            params.database_dir,
+            params.num_recycle,
+            params.recycle_early_stop_tolerance,
+            params.use_dropout
+        )
 
-    script:
-    """
-    
-    cp -r /home/ubuntu/MassiveFold_NF/output_msa  ./${seqFile.baseName}_msa 
-    """
+    // // Pass the results to the inference step
+    // RUN_inference_no_batch(
+    //     batch
+    //     msa_results,
+    //     batches_data,
+    //     params.run,
+    //     params.database_dir,
+    //     params.num_recycle,
+    //     params.recycle_early_stop_tolerance,
+    //     params.use_dropout
+    // )
 }
 
 process RUN_alignment {
     container 'jysgro/colabfold:latest'
     tag "$seqFile.baseName"
+    publishDir "result/$runName/alignment"
 
     input:
     path(seqFile)
@@ -139,13 +121,79 @@ process RUN_alignment {
 }
 
 
-process RUN_inference_no_batch {
-    container 'jysgro/colabfold:latest'
+process Create_batchs_csv {
+    tag "$sequence_name"
 
     input:
     tuple val(sequence_name), path(msaFolder)
+    val(predictions_per_model)
+    val(batch_size)
+    val(tool)
+    val(models_to_use)
+    path(script)
+
+    output:
+    path("${sequence_name}_batches.csv")  //Output JSON file with batch details
+
+    script:
+    """
+    python3 create_batches_csv.py $predictions_per_model $batch_size "$models_to_use" "$sequence_name" "$tool"
+    """
+}
+
+// process RUN_inference_no_batch {
+//     tag "$sequence_name"
+//     container 'jysgro/colabfold:latest'
+
+//     publishDir "result/$runName/prediction"
+
+//     input:
+//     tuple val(sequence_name), path(msaFolder)
+//     val(run_name)
+//     path(data_dir)
+//     val(num_recycle)
+//     val(recycle_early_stop_tolerance)
+//     val(use_dropout)
+
+//     output:
+//     path('*')
+
+//     script:
+//     """
+//     export JAX_PLATFORMS=cpu
+//     sequence_name=${sequence_name}
+//     run_name=${run_name}
+//     fafile=${msaFolder}/${sequence_name}.fasta
+//     num_recycle=${num_recycle}
+//     recycle_early_stop_tolerance=${recycle_early_stop_tolerance}
+//     BOOL_use_dropout=${use_dropout}
+
+//     if \${BOOL_use_dropout}; then
+//         echo "Parameter --use-dropout set"
+//         use_dropout="--use-dropout"
+//     fi
+
+//     time colabfold_batch \
+//       --data ${data_dir} \
+//       --save-all \
+//       --random-seed 42 \
+//       --num-models 1 \
+//       ${msaFolder} \
+//       res_${sequence_name}_${run_name}
+//     """
+// }
+
+process RUN_inference {
+    tag { id  }
+    container 'jysgro/colabfold:latest'
+
+    publishDir "result/$runName/prediction"
+
+    input:
+    tuple val(id_batch), val(sequence_name), val(batch_start), val(batch_end), val(batch_model)
+    path(msaFolder)
     val(run_name)
-    val(data_dir)
+    path(data_dir)
     val(num_recycle)
     val(recycle_early_stop_tolerance)
     val(use_dropout)
@@ -155,29 +203,30 @@ process RUN_inference_no_batch {
 
     script:
     """
-    sequence_name=${sequence_name}
-    run_name=${run_name}
-    fafile=${msaFolder}/${sequence_name}.fasta
-    data_dir=${data_dir}
+    echo $batch_model
+    num_models=\$(echo $batch_model | cut -d "_" -f 2)
+    echo "using model $num_models"
+    num_version=\$(echo $batch_model | cut -d "v" -f 2)
+    version_type="alphafold2_multimer_v$num_version"
+    model_type=$version_type
+    echo "from version version $model_type"
+    num_seeds=\$(($batch_end - $batch_start + 1))
+    echo "predictions computed in the batch: $num_seeds"
 
-    num_recycle=${num_recycle}
-    recycle_early_stop_tolerance=${recycle_early_stop_tolerance}
-    BOOL_use_dropout=${use_dropout}
-
-    if \${BOOL_use_dropout}; then
-        echo "Parameter --use-dropout set"
-        use_dropout="--use-dropout"
-    fi
-
-    time colabfold_batch
-      ${msaFolder}/
-      res_${sequence_name}_${run_name}
-      --data ${data_dir}
-      --save-all
-      --random-seed \${random_seed}
-      --num-seeds \${num_seeds}
-      --model-type \${model_type}
-      --model-order \${num_models}
-      --num-models 1
+    colabfold_batch \
+    ${msaFolder} \
+      res_${sequence_name}_${run_name}_${id_batch} \
+    --data ${data_dir} \
+    --save-all \
+    --random-seed $random_seed \
+    --num-seeds $num_seeds \
+    --model-type $model_type \
+    --model-order $num_models \
+    --num-models 1 \
+    --num-recycle $num_recycle \
+    --recycle-early-stop-tolerance $recycle_early_stop_tolerance \
+    --stop-at-score $stop_at_score \
+    $use_dropout \
+    $disable_cluster_profile
     """
 }
