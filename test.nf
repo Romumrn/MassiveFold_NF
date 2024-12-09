@@ -86,23 +86,9 @@ workflow {
             params.num_recycle,
             params.recycle_early_stop_tolerance,
             params.use_dropout,
-            params.stop_at_score,
-            params.disable_cluster_profile
+            params.stop_at_score
         )
-
-// // Pass the results to the inference step
-// RUN_inference_no_batch(
-//     batch
-//     msa_results,
-//     batches_data,
-//     params.run,
-//     params.database_dir,
-//     params.num_recycle,
-//     params.recycle_early_stop_tolerance,
-//     params.use_dropout
-// )
 }
-
 process RUN_alignment {
     container 'jysgro/colabfold:latest'
     tag "$seqFile.baseName"
@@ -119,16 +105,7 @@ process RUN_alignment {
 
     script:
     """
-    if [[ ${pair_strategy} == "greedy" ]]; then
-        pairing_strategy=0
-    elif [[ ${pair_strategy} == "complete" ]]; then
-        pairing_strategy=1
-    else
-        echo "ValueError: --pair_strategy '${pair_strategy}'"
-        exit 1
-    fi
-
-    time colabfold_search $seqFile $data_dir ${seqFile.baseName}_msa --pairing_strategy \${pairing_strategy}
+    cp -r /home/ubuntu/MassiveFold_NF/result/test/alignment/H1140_msa .
     """
 }
 
@@ -153,53 +130,11 @@ process Create_batchs_csv {
     """
 }
 
-// process RUN_inference_no_batch {
-//     tag "$sequence_name"
-//     container 'jysgro/colabfold:latest'
-
-//     publishDir "result/$runName/prediction"
-
-//     input:
-//     tuple val(sequence_name), path(msaFolder)
-//     val(run_name)
-//     path(data_dir)
-//     val(num_recycle)
-//     val(recycle_early_stop_tolerance)
-//     val(use_dropout)
-
-//     output:
-//     path('*')
-
-//     script:
-//     """
-//     export JAX_PLATFORMS=cpu
-//     sequence_name=${sequence_name}
-//     run_name=${run_name}
-//     fafile=${msaFolder}/${sequence_name}.fasta
-//     num_recycle=${num_recycle}
-//     recycle_early_stop_tolerance=${recycle_early_stop_tolerance}
-//     BOOL_use_dropout=${use_dropout}
-
-//     if \${BOOL_use_dropout}; then
-//         echo "Parameter --use-dropout set"
-//         use_dropout="--use-dropout"
-//     fi
-
-//     time colabfold_batch \
-//       --data ${data_dir} \
-//       --save-all \
-//       --random-seed 42 \
-//       --num-models 1 \
-//       ${msaFolder} \
-//       res_${sequence_name}_${run_name}
-//     """
-// }
-
 process RUN_inference {
     tag " $sequence_name (batch: $id_batch)"
     container 'jysgro/colabfold:latest'
 
-    publishDir "result/prediction/$sequence_name/$id_batch"
+    publishDir "result/$sequence_name/$id_batch/prediction"
 
     input:
     tuple val(id_batch), val(sequence_name), val(batch_start), val(batch_end), val(batch_model), path(msaFolder)
@@ -209,14 +144,12 @@ process RUN_inference {
     val(recycle_early_stop_tolerance)
     val(use_dropout)
     val(stop_at_score)
-    val(disable_cluster_profile)
 
     output:
     path("*")
 
     script:
     """
-    export JAX_PLATFORMS=cpu
     random_seed=\$(shuf -i 0-1000000 -n 1)
     echo $batch_model
     num_models=\$(echo $batch_model | cut -d "_" -f 2)
@@ -227,27 +160,6 @@ process RUN_inference {
     echo "from version version \$model_type"
     num_seeds=\$(($batch_end - $batch_start + 1))
     echo "predictions computed in the batch: \$num_seeds"
-    echo "$msaFolder"
-    colabfold_batch \
-        ${msaFolder} \
-        res_${sequence_name}_${run_name}_${id_batch} \
-        --data ${data_dir} \
-        --save-all \
-        --random-seed \$random_seed \
-        --num-seeds \$num_seeds \
-        --model-type \$model_type \
-        --model-order \$num_models \
-        --num-models 1 \
-        --num-recycle $num_recycle \
-        --recycle-early-stop-tolerance $recycle_early_stop_tolerance \
-        --stop-at-score $stop_at_score 
+    echo "colabfold_batch {msaFolder} res_${sequence_name}_${run_name}_${id_batch} --data ${data_dir} --save-all   --random-seed \$random_seed -num-seeds \$num_seeds -model-type \$model_type -model-order \$num_models -num-models 1 -num-recycle $num_recycle -recycle-early-stop-tolerance $recycle_early_stop_tolerance -stop-at-score $stop_at_score use_dropout disable_cluster_profile" > CMD$id_batch
     """
 }
-
-    // $use_dropout \
-    // $disable_cluster_profile
-    
-// BOOL_use_dropout=$use_dropout
-    // if $BOOl_disable_cluster_profile; then
-    //     echo "Parameter --disable-cluster-profile set"
-    //     disable_cluster_profile="--disable-cluster-profile"
