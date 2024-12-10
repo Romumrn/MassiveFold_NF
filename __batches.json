@@ -1,0 +1,77 @@
+{
+    "0": {
+        "start": "0",
+        "end": "24",
+        "model": "model_1_multimer_v1"
+    },
+    "1": {
+        "start": "0",
+        "end": "24",
+        "model": "model_2_multimer_v1"
+    },
+    "2": {
+        "start": "0",
+        "end": "24",
+        "model": "model_3_multimer_v1"
+    },
+    "3": {
+        "start": "0",
+        "end": "24",
+        "model": "model_4_multimer_v1"
+    },
+    "4": {
+        "start": "0",
+        "end": "24",
+        "model": "model_5_multimer_v1"
+    },
+    "5": {
+        "start": "0",
+        "end": "24",
+        "model": "model_1_multimer_v2"
+    },
+    "6": {
+        "start": "0",
+        "end": "24",
+        "model": "model_2_multimer_v2"
+    },
+    "7": {
+        "start": "0",
+        "end": "24",
+        "model": "model_3_multimer_v2"
+    },
+    "8": {
+        "start": "0",
+        "end": "24",
+        "model": "model_4_multimer_v2"
+    },
+    "9": {
+        "start": "0",
+        "end": "24",
+        "model": "model_5_multimer_v2"
+    },
+    "10": {
+        "start": "0",
+        "end": "24",
+        "model": "model_1_multimer_v3"
+    },
+    "11": {
+        "start": "0",
+        "end": "24",
+        "model": "model_2_multimer_v3"
+    },
+    "12": {
+        "start": "0",
+        "end": "24",
+        "model": "model_3_multimer_v3"
+    },
+    "13": {
+        "start": "0",
+        "end": "24",
+        "model": "model_4_multimer_v3"
+    },
+    "14": {
+        "start": "0",
+        "end": "24",
+        "model": "model_5_multimer_v3"
+    }
+}
