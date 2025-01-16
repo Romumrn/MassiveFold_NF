@@ -20,7 +20,7 @@ Optional arguments:
     --jobid <str>: job ID of an alignment job to wait for inference, skips the alignments.
 
 Optional flags:
-    --tool_to_use <str>: (default: 'AFmassive') Use either AFmassive or ColabFold in structure prediction for MassiveFold.
+    --tool_to_use <str>: (default: 'ColabFold') Use either AFmassive or ColabFold in structure prediction for MassiveFold.
     --only_msas: only compute alignments, the first step of MassiveFold.
     --calibrate: calibrate --batch_size value. Searches from the previous runs for the same 'fasta' path given
                  in --sequence and uses the longest prediction time found to compute the maximal number of predictions per batch.
@@ -79,7 +79,7 @@ workflow {
             return batch.values() + [truc]
         }
         
-    RUN_inference(
+    res_prediction= RUN_inference(
             batches_msa,
             params.run,
             params.database_dir,
@@ -89,18 +89,15 @@ workflow {
             params.stop_at_score,
             params.disable_cluster_profile
         )
+    
+        // Run the 'Extract_ScoresAndRanking' process for each batch
+    extract_results = Extract_ScoresAndRanking(res_prediction )
 
-// // Pass the results to the inference step
-// RUN_inference_no_batch(
-//     batch
-//     msa_results,
-//     batches_data,
-//     params.run,
-//     params.database_dir,
-//     params.num_recycle,
-//     params.recycle_early_stop_tolerance,
-//     params.use_dropout
-// )
+    log.info("Collected CSV files: ${extract_results.collect { it[5] }}")
+
+    // Gather all CSVs into a final combined CSV
+    //final_scores = Gather_scores(csv_files: extract_results.collect { it[5] }) // Collect all the CSV files created by Extract_ScoresAndRanking
+
 }
 
 process RUN_alignment {
@@ -153,53 +150,11 @@ process Create_batchs_csv {
     """
 }
 
-// process RUN_inference_no_batch {
-//     tag "$sequence_name"
-//     container 'jysgro/colabfold:latest'
-
-//     publishDir "result/$runName/prediction"
-
-//     input:
-//     tuple val(sequence_name), path(msaFolder)
-//     val(run_name)
-//     path(data_dir)
-//     val(num_recycle)
-//     val(recycle_early_stop_tolerance)
-//     val(use_dropout)
-
-//     output:
-//     path('*')
-
-//     script:
-//     """
-//     export JAX_PLATFORMS=cpu
-//     sequence_name=${sequence_name}
-//     run_name=${run_name}
-//     fafile=${msaFolder}/${sequence_name}.fasta
-//     num_recycle=${num_recycle}
-//     recycle_early_stop_tolerance=${recycle_early_stop_tolerance}
-//     BOOL_use_dropout=${use_dropout}
-
-//     if \${BOOL_use_dropout}; then
-//         echo "Parameter --use-dropout set"
-//         use_dropout="--use-dropout"
-//     fi
-
-//     time colabfold_batch \
-//       --data ${data_dir} \
-//       --save-all \
-//       --random-seed 42 \
-//       --num-models 1 \
-//       ${msaFolder} \
-//       res_${sequence_name}_${run_name}
-//     """
-// }
-
 process RUN_inference {
-    tag " $sequence_name (batch: $id_batch)"
+    tag " $sequence_name | batch#$id_batch"
     container 'jysgro/colabfold:latest'
 
-    publishDir "result/prediction/$sequence_name/$id_batch"
+    publishDir "result/prediction/$sequence_name/$batch_model/$id_batch"
 
     input:
     tuple val(id_batch), val(sequence_name), val(batch_start), val(batch_end), val(batch_model), path(msaFolder)
@@ -212,8 +167,8 @@ process RUN_inference {
     val(disable_cluster_profile)
 
     output:
-    path("*")
-
+    tuple val(id_batch), val(sequence_name), val(batch_start), val(batch_end), val(batch_model), path("*")
+    
     script:
     """
     export JAX_PLATFORMS=cpu
@@ -251,3 +206,40 @@ process RUN_inference {
     // if $BOOl_disable_cluster_profile; then
     //     echo "Parameter --disable-cluster-profile set"
     //     disable_cluster_profile="--disable-cluster-profile"
+
+process Extract_ScoresAndRanking {
+    tag { "Extract and rank for ${params.target_run}" }
+    container 'python/3.12.8-alpine3.20'
+    
+    input:
+    tuple val(id_batch), val(sequence_name), val(batch_start), val(batch_end), val(batch_model), path(resultsDir)
+
+    output:
+    tuple val(id_batch), val(sequence_name), val(batch_start), val(batch_end), val(batch_model),path("*.csv")
+
+    script:
+    """
+    python3 extract_scores.py $id_batch $sequence_name $batch_start $batch_end $batch_model
+    """
+}
+
+process Gather_scores {
+    
+    input:
+    path csv_files
+
+    output:
+    path("final_combined_scores.csv")
+
+    script:
+    """
+    # Combine all CSVs into a single final CSV
+    echo 'File,ID_Batch,Sequence_Name,Batch_Start,Batch_End,Batch_Model,Ranking_PTM,Ranking_IPTM,Ranking_Debug' > final_combined_scores.csv
+
+    # Iterate over each CSV file and append its contents to the final_combined_scores.csv
+    for csv_file in $csv_files; do
+        # Skip the header (first line) and append the rest to the final file
+        tail -n +2 $csv_file >> final_combined_scores.csv
+    done
+    """
+}
