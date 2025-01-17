@@ -90,8 +90,8 @@ workflow {
             params.disable_cluster_profile
         )
     
-        // Run the 'Extract_ScoresAndRanking' process for each batch
-    extract_results = Extract_ScoresAndRanking(res_prediction )
+        // Run the 'Extract_Scores' process for each batch
+    extract_results = Extract_Scores(res_prediction )
 
     log.info("Collected CSV files: ${extract_results.collect { it[5] }}")
 
@@ -207,9 +207,8 @@ process RUN_inference {
     //     echo "Parameter --disable-cluster-profile set"
     //     disable_cluster_profile="--disable-cluster-profile"
 
-process Extract_ScoresAndRanking {
-    tag { "Extract and rank for ${params.target_run}" }
-    container 'python/3.12.8-alpine3.20'
+process Extract_Scores {
+    tag { "Extract Score for $sequence_name #$id_batch" }
     
     input:
     tuple val(id_batch), val(sequence_name), val(batch_start), val(batch_end), val(batch_model), path(resultsDir)
@@ -219,7 +218,7 @@ process Extract_ScoresAndRanking {
 
     script:
     """
-    python3 extract_scores.py $id_batch $sequence_name $batch_start $batch_end $batch_model
+    extract_score.py $id_batch $sequence_name $batch_start $batch_end $batch_model $resultsDir
     """
 }
 
