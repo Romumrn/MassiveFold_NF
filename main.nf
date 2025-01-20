@@ -93,10 +93,11 @@ workflow {
         // Run the 'Extract_Scores' process for each batch
     extract_results = Extract_Scores(res_prediction )
 
-    log.info("Collected CSV files: ${extract_results.collect { it[5] }}")
+    scores_files = extract_results.collect { v ->  v[5] } 
+    //log.info("Collected CSV files: ${scores_files.view()}")
 
     // Gather all CSVs into a final combined CSV
-    //final_scores = Gather_scores(csv_files: extract_results.collect { it[5] }) // Collect all the CSV files created by Extract_ScoresAndRanking
+    final_scores = Gather_scores(scores_files ) // Collect all the CSV files created by Extract_ScoresAndRanking
 
 }
 
@@ -223,7 +224,8 @@ process Extract_Scores {
 }
 
 process Gather_scores {
-    
+    publishDir "result"
+
     input:
     path csv_files
 
@@ -233,12 +235,13 @@ process Gather_scores {
     script:
     """
     # Combine all CSVs into a single final CSV
-    echo 'File,ID_Batch,Sequence_Name,Batch_Start,Batch_End,Batch_Model,Ranking_PTM,Ranking_IPTM,Ranking_Debug' > final_combined_scores.csv
+    echo 'File,ID_Batch,Sequence_Name,Batch_Start,Batch_End,Batch_Model,Ranking_PTM,Ranking_IPTM,Ranking_Debug' > temp
 
-    # Iterate over each CSV file and append its contents to the final_combined_scores.csv
-    for csv_file in $csv_files; do
+    # Iterate over each CSV file and append its contents to the temp file and after final_combined_scores.csv
+    for csv_file in *.csv; do
         # Skip the header (first line) and append the rest to the final file
-        tail -n +2 $csv_file >> final_combined_scores.csv
+        tail -n +2 \$csv_file >> temp
     done
+    mv temp final_combined_scores.csv
     """
 }
